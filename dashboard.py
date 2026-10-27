@@ -5,8 +5,10 @@ import re
 import sqlite3
 from contextlib import closing
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent
@@ -84,14 +86,65 @@ def read_data(path):
         return {'games': [], 'message': '数据库读取失败：' + str(exc), 'schedule_updated': None}
 
 
+def read_game(path, slug, kind='all', offset=0, limit=50):
+    if not event_url(slug) or kind not in ('all', *TYPES) or offset < 0 or not 1 <= limit <= 100:
+        return {'error': '比赛地址或查询参数无效。'}
+    data = read_data(path)
+    game = next((item for item in data['games'] if item['slug'] == slug), None)
+    if not game:
+        return {'error': data['message'] or '找不到该比赛；赛程可能尚未保存或比赛数据已清理。'}
+    try:
+        with closing(sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True)) as db:
+            rows = db.execute('SELECT m.cid,m.question,m.raw,m.checkpoint,m.last_error FROM markets m JOIN events e ON e.id=m.event_id WHERE e.slug=? ORDER BY m.question,m.cid', (slug,)).fetchall()
+            markets = []
+            for cid, question, raw, checkpoint, error in rows:
+                try:
+                    m = json.loads(raw)
+                    market_type = m.get('sportsMarketType')
+                except (ValueError, TypeError, AttributeError):
+                    continue
+                if market_type not in TYPES:
+                    continue
+                markets.append({'cid': cid, 'question': question or '未命名盘口', 'type': market_type, 'line': m.get('line'), 'checkpoint': checkpoint, 'error': error})
+            selected = [m['cid'] for m in markets if kind == 'all' or m['type'] == kind]
+            trades = []
+            total = 0
+            if selected:
+                placeholders = ','.join('?' for _ in selected)
+                where = 'cid IN (' + placeholders + ')'
+                total = db.execute('SELECT COUNT(*) FROM trades WHERE ' + where, selected).fetchone()[0]
+                q = 'SELECT cid,timestamp,first_seen,wallet,side,outcome,price,size,tx_hash FROM trades WHERE ' + where + ' ORDER BY timestamp DESC, fingerprint, occurrence LIMIT ? OFFSET ?'
+                for cid, ts, seen, wallet, side, outcome, price, size, tx in db.execute(q, [*selected, limit, offset]):
+                    try:
+                        amount = str(Decimal(price) * Decimal(size))
+                    except (InvalidOperation, TypeError, ValueError):
+                        amount = None
+                    trades.append({'cid': cid, 'timestamp': ts, 'first_seen': seen, 'wallet': wallet, 'side': side, 'outcome': outcome, 'price': price, 'size': size, 'amount': amount, 'tx_hash': tx})
+        return {'game': game, 'markets': markets, 'trades': trades, 'total': total, 'offset': offset, 'limit': limit}
+    except (sqlite3.Error, OSError, ValueError) as exc:
+        return {'error': '读取比赛数据失败：' + str(exc)}
+
+
 def handler(db_path):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path == '/api/calendar':
+            parts = urlsplit(self.path)
+            if parts.path.startswith('/api/game/'):
+                query = parse_qs(parts.query)
+                try:
+                    result = read_game(db_path, parts.path[len('/api/game/'):], query.get('type', ['all'])[0], int(query.get('offset', ['0'])[0]))
+                except ValueError:
+                    result = {'error': '查询参数无效。'}
+                body = json.dumps(result, ensure_ascii=False).encode('utf-8')
+                content_type = 'application/json; charset=utf-8'
+            elif parts.path == '/api/calendar':
                 body = json.dumps(read_data(db_path), ensure_ascii=False).encode('utf-8')
                 content_type = 'application/json; charset=utf-8'
-            elif self.path in ('/', '/index.html'):
+            elif parts.path in ('/', '/index.html'):
                 body = (ROOT / 'dashboard.html').read_bytes()
+                content_type = 'text/html; charset=utf-8'
+            elif parts.path == '/game':
+                body = (ROOT / 'game.html').read_bytes()
                 content_type = 'text/html; charset=utf-8'
             else:
                 self.send_error(404)

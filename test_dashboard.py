@@ -39,6 +39,32 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(dashboard.team_name('NEW', raw, 'away'), {'en': 'Example Team', 'zh': '中文名称待确认'})
         self.assertIsNone(dashboard.event_url('https://example.com'))
 
+    def test_game_details_filter_pagination_and_decimal_amount(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'data.sqlite3'
+            db = recorder.connect(path)
+            slug = 'nba-det-nyk-2026-10-27'
+            db.execute('INSERT INTO events VALUES(?,?,?,?,?)', ('e', slug, 'game', '{}', 0))
+            db.execute('INSERT INTO schedule(game_id,slug,tipoff,away,home,raw,status,updated_at) VALUES(?,?,?,?,?,?,?,?)', ('g', slug, 1793145600, 'DET', 'NY', '{}', 'open', 0))
+            for cid, kind in [('win', 'moneyline'), ('tot', 'totals'), ('half', 'first_half_totals')]:
+                db.execute('INSERT INTO markets(cid,event_id,question,created_at,raw) VALUES(?,?,?,?,?)', (cid, 'e', cid, 1, json.dumps({'sportsMarketType': kind})))
+                db.execute('INSERT INTO trades VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (cid, 1, cid, 10, 20, 'wallet', 'BUY', 'Yes', 'asset', '0.1', '0.2', 'tx', '{}', 1))
+            db.commit()
+            db.close()
+            result = dashboard.read_game(path, slug, limit=1)
+            self.assertEqual(result['total'], 2)
+            self.assertEqual(len(result['trades']), 1)
+            self.assertEqual(result['trades'][0]['amount'], '0.02')
+            self.assertEqual(len(dashboard.read_game(path, slug, offset=1, limit=1)['trades']), 1)
+            self.assertEqual(dashboard.read_game(path, slug, kind='totals')['total'], 1)
+            self.assertEqual(dashboard.read_game(path, slug, kind='spreads')['total'], 0)
+            self.assertIn('error', dashboard.read_game(path, 'invalid'))
+            self.assertIn('error', dashboard.read_game(path, slug, offset=-1))
+
+    def test_game_details_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIn('error', dashboard.read_game(Path(tmp) / 'absent.sqlite3', 'nba-det-nyk-2026-10-27'))
+
 
 if __name__ == '__main__':
     unittest.main()
