@@ -125,11 +125,64 @@ def read_game(path, slug, kind='all', offset=0, limit=50):
         return {'error': '读取比赛数据失败：' + str(exc)}
 
 
+def read_summary(path, slug, kind='all'):
+    result = read_game(path, slug, kind=kind, limit=1)
+    if 'error' in result:
+        return result
+    markets = [m for m in result['markets'] if kind == 'all' or m['type'] == kind]
+    stats = {m['cid']: {'records': 0, 'wallets': set(), 'invalid': 0, 'unknown_side': 0, 'outcomes': {}, 'latest': None} for m in markets}
+    try:
+        with closing(sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True)) as db:
+            rows = db.execute('SELECT t.cid,t.wallet,t.side,t.outcome,t.price,t.size,t.timestamp FROM trades t JOIN markets m ON t.cid=m.cid JOIN events e ON m.event_id=e.id WHERE e.slug=?', (slug,))
+            for cid, wallet, side, outcome, price, size, ts in rows:
+                if cid not in stats:
+                    continue
+                item = stats[cid]
+                item['records'] += 1
+                if wallet:
+                    item['wallets'].add(wallet.lower())
+                if ts is not None and (item['latest'] is None or ts > item['latest']):
+                    item['latest'] = ts
+                label = outcome or '结果未知'
+                group = item['outcomes'].setdefault(label, {'buy': Decimal(0), 'sell': Decimal(0), 'buy_count': 0, 'sell_count': 0, 'invalid': 0})
+                if side not in ('BUY', 'SELL'):
+                    item['unknown_side'] += 1
+                    continue
+                try:
+                    p, n = Decimal(price), Decimal(size)
+                    if not p.is_finite() or not n.is_finite() or p < 0 or n < 0:
+                        raise ValueError('无效金额')
+                    amount = p * n
+                except (InvalidOperation, TypeError, ValueError):
+                    item['invalid'] += 1
+                    group['invalid'] += 1
+                    continue
+                key = 'buy' if side == 'BUY' else 'sell'
+                group[key] += amount
+                group[key + '_count'] += 1
+        for market in markets:
+            item = stats[market['cid']]
+            market['records'] = item['records']
+            market['wallet_count'] = len(item['wallets'])
+            market['invalid'] = item['invalid']
+            market['unknown_side'] = item['unknown_side']
+            market['latest'] = item['latest']
+            market['outcomes'] = [{'name': name, 'buy': str(group['buy']), 'sell': str(group['sell']), 'buy_count': group['buy_count'], 'sell_count': group['sell_count'], 'invalid': group['invalid']} for name, group in sorted(item['outcomes'].items())]
+        return {'game': result['game'], 'markets': markets}
+    except (sqlite3.Error, OSError, ValueError) as exc:
+        return {'error': '读取盘口汇总失败：' + str(exc)}
+
+
 def handler(db_path):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             parts = urlsplit(self.path)
-            if parts.path.startswith('/api/game/'):
+            if parts.path.startswith('/api/summary/'):
+                query = parse_qs(parts.query)
+                result = read_summary(db_path, parts.path[len('/api/summary/'):], query.get('type', ['all'])[0])
+                body = json.dumps(result, ensure_ascii=False).encode('utf-8')
+                content_type = 'application/json; charset=utf-8'
+            elif parts.path.startswith('/api/game/'):
                 query = parse_qs(parts.query)
                 try:
                     result = read_game(db_path, parts.path[len('/api/game/'):], query.get('type', ['all'])[0], int(query.get('offset', ['0'])[0]))
