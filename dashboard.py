@@ -108,7 +108,7 @@ def handler(db_path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--db', default='nba_trades.sqlite3')
-    parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--port', type=int, default=8068)
     args = parser.parse_args()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), handler(args.db))
     print(f'日历地址：http://127.0.0.1:{args.port}  按 Ctrl+C 停止。', flush=True)

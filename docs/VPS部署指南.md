@@ -61,7 +61,7 @@ User=polymarket
 Group=polymarket
 WorkingDirectory=/opt/polymarket_data
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/polymarket_data/.venv/bin/python /opt/polymarket_data/dashboard.py --db /var/lib/polymarket-data/nba_trades.sqlite3 --port 8765
+ExecStart=/opt/polymarket_data/.venv/bin/python /opt/polymarket_data/dashboard.py --db /var/lib/polymarket-data/nba_trades.sqlite3 --port 8068
 Restart=on-failure
 RestartSec=10
 
@@ -78,7 +78,7 @@ sudo systemctl enable --now polymarket-recorder.service polymarket-dashboard.ser
 sudo systemctl status polymarket-recorder.service polymarket-dashboard.service --no-pager
 sudo journalctl -u polymarket-recorder.service -n 50 --no-pager
 sudo journalctl -u polymarket-dashboard.service -n 50 --no-pager
-curl http://127.0.0.1:8765/api/calendar
+curl http://127.0.0.1:8068/api/calendar
 ```
 
 采集和维护需要时间，启动后如果显示暂无赛程，先查看采集服务日志。看采集状态：
@@ -89,13 +89,15 @@ sudo -u polymarket /opt/polymarket_data/.venv/bin/python /opt/polymarket_data/re
 
 ## 3. 从自己的电脑打开日历
 
-仪表盘默认仅在 VPS 的本机地址 `127.0.0.1:8765` 监听，没有登录功能。**不要直接把它暴露到公网**。在自己的电脑上打开终端，把 `你的账号` 和 `VPS地址` 替换为实际值：
+仪表盘默认仅在 VPS 的本机地址 `127.0.0.1:8068` 监听，没有登录功能。**不要直接把它暴露到公网**。在自己的电脑上打开终端，把 `你的账号` 和 `VPS地址` 替换为实际值：
 
 ```bash
-ssh -L 8765:127.0.0.1:8765 你的账号@VPS地址
+ssh -L 8068:127.0.0.1:8068 你的账号@VPS地址
 ```
 
-保持这个 SSH 窗口打开，再在自己的电脑上访问 `http://127.0.0.1:8765`。如果本机 8765 已被占用，可把命令中的第一个 `8765` 换成 `18765`，然后访问 `http://127.0.0.1:18765`。SSH 连接断开后隧道也会关闭。
+保持这个 SSH 窗口打开，再在自己的电脑上访问 `http://127.0.0.1:8068`。如果本机 8068 已被占用，可把命令中的第一个 `8068` 换成 `18068`，然后访问 `http://127.0.0.1:18068`。SSH 连接断开后隧道也会关闭。
+
+如果 VPS 上已按旧指南安装过日历服务，更新代码后还需编辑 `/etc/systemd/system/polymarket-dashboard.service`，把 `ExecStart` 中显式指定的旧端口改为 `8068`，然后执行 `sudo systemctl daemon-reload` 和 `sudo systemctl restart polymarket-dashboard.service`。同时更新 SSH 隧道命令；仅更新代码不会自动改写已有的 systemd 文件。
 
 ## 4. 更新与备份
 
