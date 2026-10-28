@@ -167,7 +167,7 @@ def read_summary(path, slug, kind='all'):
             market['invalid'] = item['invalid']
             market['unknown_side'] = item['unknown_side']
             market['latest'] = item['latest']
-            market['outcomes'] = [{'name': name, 'buy': str(group['buy']), 'sell': str(group['sell']), 'buy_count': group['buy_count'], 'sell_count': group['sell_count'], 'invalid': group['invalid']} for name, group in sorted(item['outcomes'].items())]
+            market['outcomes'] = [{'name': name, 'buy': str(group['buy']), 'sell': str(group['sell']), 'net': str(group['buy'] - group['sell']), 'buy_count': group['buy_count'], 'sell_count': group['sell_count'], 'invalid': group['invalid']} for name, group in sorted(item['outcomes'].items())]
         return {'game': result['game'], 'markets': markets}
     except (sqlite3.Error, OSError, ValueError) as exc:
         return {'error': '读取盘口汇总失败：' + str(exc)}

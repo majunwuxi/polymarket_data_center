@@ -75,6 +75,7 @@ class DashboardTests(unittest.TestCase):
             for cid, kind in [('win', 'moneyline'), ('tot', 'totals'), ('half', 'first_half_totals')]:
                 db.execute('INSERT INTO markets(cid,event_id,question,created_at,raw) VALUES(?,?,?,?,?)', (cid, 'e', cid, 1, json.dumps({'sportsMarketType': kind})))
             samples = [('a','win','0xABC','BUY','Pistons','0.1','0.2'),('b','win','0xabc','SELL','Pistons','0.4','2'),('c','win','0xdef','BUY','Knicks','bad','2'),('d','tot','0xdef','BUY','Over','0.5','10'),('e','half','0xdef','BUY','Over','0.5','10')]
+            samples += [('f','tot','0xdef','BUY','Under','0.5','2000'),('g','tot','0xdef','SELL','Under','0.6','600'),('h','tot','0xdef','SELL','Over','0.5','10')]
             for fp,cid,wallet,side,outcome,price,size in samples:
                 db.execute('INSERT INTO trades VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (fp,1,cid,10,20,wallet,side,outcome,'asset',price,size,'tx','{}',1))
             db.commit()
@@ -85,6 +86,13 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual((markets['win']['records'],markets['win']['wallet_count'],markets['win']['invalid']), (3,2,1))
             pistons = next(o for o in markets['win']['outcomes'] if o['name']=='Pistons')
             self.assertEqual((pistons['buy'],pistons['sell']), ('0.02','0.8'))
+            self.assertEqual(pistons['net'], '-0.78')
+            over = markets['tot']['outcomes'][0]
+            self.assertEqual(over['net'], '0.0')
+            under = next(o for o in markets['tot']['outcomes'] if o['name']=='Under')
+            self.assertEqual((under['buy'], under['sell'], under['net']), ('1000.0', '360.0', '640.0'))
+            invalid = next(o for o in markets['win']['outcomes'] if o['name']=='Knicks')
+            self.assertEqual((invalid['net'], invalid['buy_count'], invalid['sell_count']), ('0', 0, 0))
             self.assertEqual([m['cid'] for m in dashboard.read_summary(path, slug, 'totals')['markets']], ['tot'])
 
 
