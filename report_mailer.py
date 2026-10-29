@@ -85,7 +85,7 @@ def result_rows(game, market_type, teams):
         outcomes = market.get('outcomes', [])
         valid = [o for o in outcomes if o['buy_count'] + o['sell_count'] > 0]
         values = [Decimal(o['net']) for o in valid]
-        top = max(values) if values else None
+        top = max(values) if values and market_type == 'moneyline' else None
         entries = []
         for outcome in outcomes:
             has_data = outcome['buy_count'] + outcome['sell_count'] > 0
@@ -93,10 +93,17 @@ def result_rows(game, market_type, teams):
             entries.append({
                 'name': outcome_label(outcome['name'], teams, market_type),
                 'net': amount if has_data else None,
-                'highlight': has_data and top is not None and amount == top,
+                'highlight': market_type == 'moneyline' and has_data and top is not None and amount == top,
             })
         groups.append({'title': market_title(market) if market_type == 'totals' else market.get('question') or '全场胜负', 'entries': entries,
                        'checkpoint': market.get('checkpoint'), 'error': market.get('error')})
+    if market_type == 'totals':
+        all_values = [entry['net'] for group in groups for entry in group['entries'] if entry['net'] is not None]
+        top = max(all_values) if all_values else None
+        if top is not None:
+            for group in groups:
+                for entry in group['entries']:
+                    entry['highlight'] = entry['net'] is not None and entry['net'] == top
     return groups
 
 
