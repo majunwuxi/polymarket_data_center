@@ -51,14 +51,13 @@ def load_games(db_path, now=None):
     return report_date, result, status
 
 
-def outcome_label(name, game, market_type):
+def outcome_label(name, teams, market_type):
     if market_type == 'totals':
         if name.lower() == 'over':
             return '大于（Over）'
         if name.lower() == 'under':
             return '小于（Under）'
-    for side in ('away', 'home'):
-        team = game[side]
+    for team in teams.values():
         if name == team['en'] or team['en'].endswith(' ' + name):
             return team['zh']
     return name
@@ -78,7 +77,7 @@ def market_title(market):
     return question
 
 
-def result_rows(game, market_type):
+def result_rows(game, market_type, teams):
     groups = []
     for market in game['markets']:
         if market['type'] != market_type:
@@ -92,7 +91,7 @@ def result_rows(game, market_type):
             has_data = outcome['buy_count'] + outcome['sell_count'] > 0
             amount = Decimal(outcome['net'])
             entries.append({
-                'name': outcome_label(outcome['name'], game, market_type),
+                'name': outcome_label(outcome['name'], teams, market_type),
                 'net': amount if has_data else None,
                 'highlight': has_data and top is not None and amount == top,
             })
@@ -132,6 +131,7 @@ def render_report(report_date, games, schedule_status=None, generated_at=None):
     for game in games:
         away = dashboard.team_name(game['away'], game['raw'], 'away')
         home = dashboard.team_name(game['home'], game['raw'], 'home')
+        teams = {'away': away, 'home': home}
         title = f"{away['zh']} vs {home['zh']}"
         url = dashboard.event_url(game['slug'])
         parts.append(f'<section class="game"><h2>{html.escape(title)}</h2><div class="note">{datetime.fromtimestamp(game["tipoff"], BEIJING):%H:%M} 开赛 · {html.escape(game["status"])} · <a href="{html.escape(url or "#", quote=True)}">Polymarket 比赛页</a></div>')
@@ -140,7 +140,7 @@ def render_report(report_date, games, schedule_status=None, generated_at=None):
             parts.append(f'<p class="note warn">赛程检查异常：{html.escape(game["schedule_error"])}</p>')
             plain.append('赛程检查异常：' + game['schedule_error'])
         for kind, heading in (('moneyline', '全场胜负 Moneyline'), ('totals', '全场总分 Totals')):
-            groups = result_rows(game, kind)
+            groups = result_rows(game, kind, teams)
             parts.append(f'<div class="section"><h3>{heading}</h3>')
             plain.append(heading)
             if not groups:
