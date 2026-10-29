@@ -78,14 +78,34 @@ def market_title(market):
 
 
 def result_rows(game, market_type, teams):
-    groups = []
+    markets = []
     for market in game['markets']:
         if market['type'] != market_type:
             continue
+        markets.append(market)
+
+    selected = markets
+    if market_type == 'totals':
+        volumes = {}
+        for market in markets:
+            buy_total = sum(
+                (Decimal(outcome['buy']) for outcome in market.get('outcomes', []) if outcome['buy_count'] > 0),
+                Decimal(0),
+            )
+            if any(outcome['buy_count'] > 0 for outcome in market.get('outcomes', [])):
+                volumes[market['cid']] = buy_total
+        if volumes:
+            max_buy_total = max(volumes.values())
+            selected = [market for market in markets if volumes.get(market['cid']) == max_buy_total]
+        else:
+            selected = []
+
+    groups = []
+    for market in selected:
         outcomes = market.get('outcomes', [])
         valid = [o for o in outcomes if o['buy_count'] + o['sell_count'] > 0]
         values = [Decimal(o['net']) for o in valid]
-        top = max(values) if values and market_type == 'moneyline' else None
+        top = max(values) if values else None
         entries = []
         for outcome in outcomes:
             has_data = outcome['buy_count'] + outcome['sell_count'] > 0
@@ -93,17 +113,12 @@ def result_rows(game, market_type, teams):
             entries.append({
                 'name': outcome_label(outcome['name'], teams, market_type),
                 'net': amount if has_data else None,
-                'highlight': market_type == 'moneyline' and has_data and top is not None and amount == top,
+                'highlight': has_data and top is not None and amount == top,
             })
+        buy_total = sum((Decimal(o['buy']) for o in outcomes if o['buy_count'] > 0), Decimal(0))
         groups.append({'title': market_title(market) if market_type == 'totals' else market.get('question') or '全场胜负', 'entries': entries,
+                       'buy_total': buy_total if market_type == 'totals' else None,
                        'checkpoint': market.get('checkpoint'), 'error': market.get('error')})
-    if market_type == 'totals':
-        all_values = [entry['net'] for group in groups for entry in group['entries'] if entry['net'] is not None]
-        top = max(all_values) if all_values else None
-        if top is not None:
-            for group in groups:
-                for entry in group['entries']:
-                    entry['highlight'] = entry['net'] is not None and entry['net'] == top
     return groups
 
 
@@ -151,11 +166,15 @@ def render_report(report_date, games, schedule_status=None, generated_at=None):
             parts.append(f'<div class="section"><h3>{heading}</h3>')
             plain.append(heading)
             if not groups:
-                parts.append('<div class="empty">尚未发现对应盘口。</div>')
-                plain.append('尚未发现对应盘口。')
+                empty_text = '暂无有买入记录的全场总分盘口。' if kind == 'totals' else '尚未发现对应盘口。'
+                parts.append(f'<div class="empty">{empty_text}</div>')
+                plain.append(empty_text)
             for group in groups:
-                parts.append(f'<div class="market"><div class="market-title">{html.escape(group["title"])}</div><table role="presentation" class="outcomes"><tr>')
-                plain.append(group['title'])
+                title = group['title']
+                if kind == 'totals':
+                    title += f' · 买入合计 {money(group["buy_total"])}'
+                parts.append(f'<div class="market"><div class="market-title">{html.escape(title)}</div><table role="presentation" class="outcomes"><tr>')
+                plain.append(title)
                 if not group['entries']:
                     parts.append('<td colspan="2" class="empty" style="padding:12px;background:#f7f8fa;border-radius:8px;color:#6b7789">暂无有效成交数据。</td>')
                     plain.append('暂无有效成交数据。')

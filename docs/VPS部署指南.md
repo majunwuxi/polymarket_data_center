@@ -112,7 +112,7 @@ systemctl list-timers 'polymarket-report-*'
 sudo systemctl start polymarket-report@manual.service
 ```
 
-报表对每个 Moneyline 盘口的结果分别比较净买入金额；全场总分按每条分数线比较 Over 和 Under。并列最高值会同时突出。净买入金额按已采集记录计算，不代表持仓或官方成交额；报告附上各盘口检查点和采集错误。
+报表对 Moneyline 结果比较净买入金额；全场总分先按每条分数线 Over 与 Under 的已记录买入金额之和选出最高盘口，只展示该盘口及其 Over/Under 净买入金额，不显示其他分数线。最高净买入结果会突出，并列最高值会同时突出。净买入金额按已采集记录计算，不代表持仓或官方成交额；报告附上各盘口检查点和采集错误。
 
 采集和维护需要时间，启动后如果显示暂无赛程，先查看采集服务日志。看采集状态：
 
