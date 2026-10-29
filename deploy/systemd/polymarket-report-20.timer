@@ -1,0 +1,10 @@
+[Unit]
+Description=Send the 20:00 Beijing Polymarket NBA report
+
+[Timer]
+OnCalendar=*-*-* 12:00:00 UTC
+Persistent=true
+Unit=polymarket-report@20:00.service
+
+[Install]
+WantedBy=timers.target

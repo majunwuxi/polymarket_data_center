@@ -1,0 +1,12 @@
+[Unit]
+Description=Polymarket NBA next-day email report (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=polymarket
+Group=polymarket
+WorkingDirectory=/opt/polymarket_data
+EnvironmentFile=/etc/polymarket-data/mail.env
+ExecStart=/opt/polymarket_data/.venv/bin/python /opt/polymarket_data/report_mailer.py --db /var/lib/polymarket-data/nba_trades.sqlite3 --slot %i

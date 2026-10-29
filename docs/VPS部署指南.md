@@ -81,6 +81,39 @@ sudo journalctl -u polymarket-dashboard.service -n 50 --no-pager
 curl http://127.0.0.1:8068/api/calendar
 ```
 
+## 2B. 配置次日比赛统计邮件
+
+邮件任务每天北京时间 20:00 和 21:00 各运行一次。systemd 定时器使用对应的 UTC 时间 12:00 和 13:00，不依赖 VPS 系统时区。每次任务读取发送时本地数据库中次日开赛的赛程和盘口数据；尚未发现的盘口会明确标出，不能据此视为零成交。
+
+先在 VPS 上把项目内的环境变量样例复制到服务器配置目录，再编辑真实 SMTP 参数。下面的路径和用户应与前文部署设置一致：
+
+```bash
+sudo install -d -o root -g polymarket -m 750 /etc/polymarket-data
+sudo install -o root -g polymarket -m 640 /opt/polymarket_data/deploy/mail.env.example /etc/polymarket-data/mail.env
+sudo nano /etc/polymarket-data/mail.env
+```
+
+填写 SMTP 主机、端口、加密方式、账号、应用密码、发件地址和收件人。`MAIL_TO` 与 `MAIL_CC` 支持用英文逗号分隔多个邮箱；`SMTP_SECURITY` 支持 `starttls`、`ssl` 和 `none`，默认端口为 587。发件密码只保存在 VPS 的 `/etc/polymarket-data/mail.env`，该文件不应提交到代码仓库。
+
+安装服务和两个定时器：
+
+```bash
+sudo install -m 644 /opt/polymarket_data/deploy/systemd/polymarket-report@.service /etc/systemd/system/
+sudo install -m 644 /opt/polymarket_data/deploy/systemd/polymarket-report-20.timer /etc/systemd/system/
+sudo install -m 644 /opt/polymarket_data/deploy/systemd/polymarket-report-21.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now polymarket-report-20.timer polymarket-report-21.timer
+systemctl list-timers 'polymarket-report-*'
+```
+
+发送记录和错误可通过 `sudo journalctl -u 'polymarket-report@*'` 查看。若需手动发送当前次日统计，可运行：
+
+```bash
+sudo systemctl start polymarket-report@manual.service
+```
+
+报表对每个 Moneyline 盘口的结果分别比较净买入金额；全场总分按每条分数线比较 Over 和 Under。并列最高值会同时突出。净买入金额按已采集记录计算，不代表持仓或官方成交额；报告附上各盘口检查点和采集错误。
+
 采集和维护需要时间，启动后如果显示暂无赛程，先查看采集服务日志。看采集状态：
 
 ```bash
